@@ -9,7 +9,7 @@ const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
 const bcryptSalt = bcrypt.genSaltSync(10);
 const ws = require('ws');
-
+const Message = require('./modals/messages.js');
 dotenv.config();
 const jwtSecret = process.env.JWT_SECRET;
 const app = express();
@@ -58,7 +58,7 @@ app.post('/login', async (req, res) => {
   if (foundUser) {
     const passwordOk = bcrypt.compareSync(password, foundUser.password);
     if (passwordOk) {
-      jwt.sign({ id: foundUser._id, username }, jwtSecret, {}, (err, token) => {
+      jwt.sign({ userId: foundUser._id, username }, jwtSecret, {}, (err, token) => {
         res.cookie('token', token, { sameSite: 'none', secure: true }).json({
           id: foundUser._id,
         });
@@ -75,7 +75,7 @@ app.post('/register', async (req, res) => {
       password: hashedPassword,
     });
     const token = jwt.sign(
-      { id: createdUser._id, username },
+      { userId: createdUser._id, username },
       process.env.JWT_SECRET,
       {
         expiresIn: process.env.JWT_EXPIRES_IN,
@@ -109,22 +109,34 @@ wss.on('connection', (connection, req) => {
       if (token) {
         jwt.verify(token, jwtSecret, {}, (err, userData) => {
           if (err) throw err;
-          const { id, username } = userData;
-          connection.id = id;
+          const { userId, username } = userData;
+          connection.userId = userId;
           connection.username = username;
         });
       }
     }
   }
 
-  connection.on('message', (message) => {
+  connection.on('message', async (message) => {
     const messageData = JSON.parse(message.toString());
     const { recipient, text } = messageData;
-
+    const messageDoc = await Message.create({
+      sender: connection.userId,
+      recipient,
+      text,
+    });
     if (recipient && text) {
       [...wss.clients]
-        .filter((client) => client.id === recipient)
-        .forEach((client) => client.send(JSON.stringify({ text })));
+        .filter((client) => client.userId === recipient)
+        .forEach((client) =>
+          client.send(
+            JSON.stringify({
+              text,
+              sender: connection.userId,
+              id: messageDoc._id,
+            })
+          )
+        );
     }
   });
 
@@ -134,7 +146,7 @@ wss.on('connection', (connection, req) => {
     client.send(
       JSON.stringify({
         online: [...wss.clients].map((client) => ({
-          userId: client.id,
+          userId: client.userId,
           username: client.username,
         })),
       })
