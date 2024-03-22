@@ -8,13 +8,17 @@ export default function Chat() {
   const [onlinePeople, setOnlinePeople] = useState({});
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [newMessageText, setNewMessageText] = useState('');
-  const { id } = useContext(UserContext);
+  const [messages, setMessages] = useState([]);
+  const { username, id, setId, setUsername } = useContext(UserContext);
   useEffect(() => {
+    connectToWs()
+  }, []);
+
+  function connectToWs() {
     const ws = new WebSocket('ws://localhost:4000');
     setWs(ws);
-
     ws.addEventListener('message', handleMessage);
-  }, []);
+  }
 
   function showOnlinePeople(peopleArray) {
     const people = {};
@@ -27,12 +31,15 @@ export default function Chat() {
   }
   function handleMessage(event) {
     const messageData = JSON.parse(event.data);
-    // console.log({messageData})
+    // console.log(event.messageData)
+    console.log({ messageData });
     if ('online' in messageData) {
       showOnlinePeople(messageData.online);
     } else {
-      console.log('message')
-      console.log({ messageData });
+      setMessages((prev) => [
+        ...prev,
+        { isOur: false, text: messageData.text },
+      ]);
     }
   }
 
@@ -47,6 +54,8 @@ export default function Chat() {
         text: newMessageText,
       })
     );
+    setNewMessageText('');
+    setMessages((prev) => [...prev, { text: newMessageText, isOur: true }]);
   }
   return (
     <div className="flex h-screen">
@@ -84,8 +93,14 @@ export default function Chat() {
               </div>
             </div>
           )}
+          {!!selectedUserId && (
+            <div>
+              {messages.map((message, index) => (
+                <div key={index}>{message.text}</div>
+              ))}
+            </div>
+          )}
         </div>
-
         {!!selectedUserId && (
           <form className="flex gap-2" onSubmit={sendMessage}>
             <input
